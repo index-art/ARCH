@@ -1,9 +1,7 @@
 const background = document.getElementById("background");
 
 const next = document.getElementById("next");
-
 const fullscreen = document.getElementById("fullscreen");
-
 const controls = document.querySelector(".controls");
 
 
@@ -20,7 +18,7 @@ let currentImage = 0;
 
 
 // ==========================================
-// PRECHARGEMENT DES IMAGES
+// CACHE DES IMAGES
 // ==========================================
 
 const imageCache = new Map();
@@ -28,6 +26,8 @@ const imageCache = new Map();
 
 function preloadImage(src) {
 
+    // Image déjà en cours de chargement
+    // ou déjà chargée
     if (imageCache.has(src)) {
         return imageCache.get(src);
     }
@@ -38,6 +38,8 @@ function preloadImage(src) {
 
         img.onload = async () => {
 
+            // Attend que le navigateur ait décodé
+            // l'image avant de la considérer prête.
             try {
 
                 if (img.decode) {
@@ -50,9 +52,17 @@ function preloadImage(src) {
 
         };
 
-        img.onerror = reject;
+
+        img.onerror = () => {
+
+            reject(
+                new Error(`Impossible de charger ${src}`)
+            );
+
+        };
 
     });
+
 
     img.src = src;
 
@@ -63,48 +73,101 @@ function preloadImage(src) {
 }
 
 
-images.forEach(src => {
-
-    preloadImage(src);
-
-});
-
-
 // ==========================================
-// AFFICHAGE IMAGE
+// PRÉCHARGEMENT
 // ==========================================
 
-function showImage(index) {
+// Première image : priorité
+const firstImage = images[0];
 
-    const src = images[index];
-
-    preloadImage(src).then(() => {
+preloadImage(firstImage)
+    .then(() => {
 
         background.style.backgroundImage =
-            `url("${src}")`;
+            `url("${firstImage}")`;
 
         background.classList.add("visible");
 
-    }).catch(error => {
+    })
+    .catch(error => {
 
-        console.error(
-            "Impossible de charger l'image :",
-            src
-        );
+        console.error(error);
+
+    });
+
+
+// Les images suivantes sont préchargées
+// après avoir lancé la première.
+//
+// On utilise requestIdleCallback quand disponible
+// pour éviter de concurrencer le chargement initial.
+
+function preloadRemainingImages() {
+
+    images.slice(1).forEach(src => {
+
+        preloadImage(src);
 
     });
 
 }
 
 
-showImage(currentImage);
+if ("requestIdleCallback" in window) {
+
+    requestIdleCallback(
+        preloadRemainingImages
+    );
+
+} else {
+
+    setTimeout(
+        preloadRemainingImages,
+        100
+    );
+
+}
+
+
+// ==========================================
+// AFFICHAGE IMAGE
+// ==========================================
+
+async function showImage(index) {
+
+    const src = images[index];
+
+    try {
+
+        // Normalement cette Promise est déjà terminée
+        // grâce au préchargement.
+        await preloadImage(src);
+
+        // L'image est maintenant prête :
+        // changement immédiat.
+        background.style.backgroundImage =
+            `url("${src}")`;
+
+        background.classList.add("visible");
+
+    } catch (error) {
+
+        console.error(
+            "Impossible de charger l'image :",
+            src,
+            error
+        );
+
+    }
+
+}
 
 
 // ==========================================
 // NEXT
 // ==========================================
 
-next.addEventListener("click", () => {
+next.addEventListener("click", async () => {
 
     currentImage++;
 
@@ -112,7 +175,7 @@ next.addEventListener("click", () => {
         currentImage = 0;
     }
 
-    showImage(currentImage);
+    await showImage(currentImage);
 
 });
 
@@ -189,11 +252,20 @@ function resetMouseTimer() {
 }
 
 
-document.addEventListener("mousemove", resetMouseTimer);
+document.addEventListener(
+    "mousemove",
+    resetMouseTimer
+);
 
-document.addEventListener("mousedown", resetMouseTimer);
+document.addEventListener(
+    "mousedown",
+    resetMouseTimer
+);
 
-document.addEventListener("touchstart", resetMouseTimer);
+document.addEventListener(
+    "touchstart",
+    resetMouseTimer
+);
 
 
 // ==========================================
